@@ -13,7 +13,7 @@ import requests
 import os
 
 #Directorio en el cual se descargarán los archivos:
-dir_presas = "C:\\Users\\regg6\\OneDrive - regulus.com.mx\\Documentos\\Archivos_regulus\\DATOS VARIOS\\RAW Data\\"
+dir_presas = "C:\\Users\\regg6\\OneDrive - regulus.com.mx\\Documentos\\Archivos_regulus\\DATOS VARIOS\\RAW DATA\\"
 
 #Instancia de la clase Options:
 opciones = Options()
@@ -102,27 +102,72 @@ if status == 200:
 else:
     print("Status Code %d" % status)
 
+#%%
 ############### Se limpian los archivos y se agrega nueva columna "Porcentaje de llenado" ####################
-os.chdir(dir_presas)
-time.sleep(3)
-ficheros = [x for x in os.listdir(os.getcwd()) if x.endswith('.csv')]
-l_longitud_archivo =[]
+import pandas as pd
+import datetime
+from datetime import datetime
+import requests
+import os
+import chardet
 
-for f in ficheros:
-    archivo_presas = pd.read_csv(f, delimiter=',', engine='c').reset_index(drop=True)
-    fecha = f.split('_')[2][0:-4]
-    for l in range(len(archivo_presas)):
-        l_longitud_archivo.append(fecha)
-    column_fecha = pd.DataFrame({'Fecha':l_longitud_archivo})
-    archivo_presas['Entidad federativa'] = archivo_presas['Entidad federativa'].replace({'Coahuila de Zaragoza':'Coahuila', 'Veracruz de Ignacio de la Llave':'Veracruz', 'México':'Estado de México'})
-    archivo_presas['Porcentaje de llenado'] = round(archivo_presas['Almacenamiento Actual (hm³)'] / archivo_presas['NAMO Almacenamiento (hm³)']*100,2)
-    archivo_presas.insert(0,'Fecha', column_fecha)
+#Directorio en el cual se descargarán los archivos:
+dir_presas = "C:\\Users\\regg6\\OneDrive - regulus.com.mx\\Documentos\\Archivos_regulus\\DATOS VARIOS\\Nivel de Presas\\"
+carpetas = [x for x in os.scandir(dir_presas) if x.is_dir()]
 
+l_fechas, l_df_presas = [],[]
+contador = 1
 
+#Explora cada carpeta y lee cada archivo:
+for c in carpetas:
+    carpeta = os.chdir(dir_presas + '\\' + str(c.name))
+    ficheros = [x for x in os.listdir(carpeta) if x.endswith('.csv')]
+    for f in ficheros:
+        #Abre el archivo y lee la codificación y la usa en el metodo "read_csv". Con esto se asegura que la codificacion siempre es correcta
+        with open(f, "rb") as file:
+            contenido = file.read()
+            codificion_detectada = chardet.detect(contenido)['encoding']
+        archivo_presas = pd.read_csv(f, delimiter=',', encoding=codificion_detectada).reset_index(drop=True)
+        
+        archivo_presas.columns = [' '.join(columna.split()) for columna in archivo_presas.columns]
 
-    archivo_presas.to_csv(f'C:\\Users\\regg6\\OneDrive - regulus.com.mx\\Documentos\\Archivos_regulus\\DATOS VARIOS\\CLEAN Data\\{f[0:-4]}.csv', encoding='latin-1', index=0)
-    l_longitud_archivo.clear()
+        #Toma el valor de la fecha y lo agrega al dataframe:
+        fecha = f.split('_')[2][0:-4]
+        for l in range(len(archivo_presas)):
+            l_fechas.append(str(fecha))
+        column_fecha = pd.DataFrame({'fecha':l_fechas})
+        archivo_presas.insert(0,'fecha', column_fecha)
 
+        #Elimina espacios en blanco en cada renglón:
+        archivo_presas['Nombre de presa'] = archivo_presas['Nombre de presa'].apply(lambda x: ' '.join(x.split()))
+        archivo_presas['Entidad federativa'] = archivo_presas['Entidad federativa'].apply(lambda x: ' '.join(x.split()))
+
+        #Homologa la columna Entidad Federativa y agrega una nueva columna de porcentaje de llenado pero con dos decimales:
+        archivo_presas['Entidad federativa'] = archivo_presas['Entidad federativa'].replace({'Coahuila de Zaragoza':'Coahuila', 'Veracruz de Ignacio de la Llave':'Veracruz', 'México':'Estado de México'})
+        
+        archivo_presas['porcentaje de llenado'] = round((archivo_presas['Almacenamiento Actual (hm³)'].astype(float)) / (archivo_presas['NAMO Almacenamiento (hm³)'].astype(float))*100, 2)
+        archivo_presas['Nombre de presa'] = archivo_presas['Nombre de presa'].replace({r'á':'a', r'é':'e', r'í':'i', r'ó':'o', r'ú':'u', r'Á':r'A', r'É':'E', r'Í':'I', r'Ó':'O', r'Ú':'U'}, regex=True)
+        archivo_presas['Nombre de presa'] = archivo_presas['Nombre de presa'].replace({r"\.,":","}, regex=True)
+        for i in range(len(archivo_presas)):
+            #print(archivo_presas.loc[i, "Nombre de presa"])
+            archivo_presas.loc[i, "Nombre de presa"] = archivo_presas.loc[i, "Nombre de presa"].split(',')[0]
+        
+        #print(archivo_presas)
+        l_df_presas.append(archivo_presas)
+        l_fechas.clear()
+
+    df_presas = pd.concat(l_df_presas)
+    df_presas = df_presas[['fecha', 'Nombre de presa', 'Entidad federativa', 'NAME Almacenamiento (hm³)', 'NAMO Almacenamiento (hm³)', 'Almacenamiento Actual (hm³)', 'porcentaje de llenado']]
+    #df_presas.to_csv(f'C:\\Users\\regg6\\OneDrive - regulus.com.mx\\Documentos\\Archivos_regulus\\DATOS VARIOS\\CLEAN DATA 2\\Nivel de presas {str(2024)}.csv', encoding='latin-1', index=0)
+
+    df_presas.to_csv(f'C:\\Users\\regg6\\OneDrive - regulus.com.mx\\Documentos\\Archivos_regulus\\DATOS VARIOS\\CLEAN DATA 2\\Nivel de presas {c.name}.csv', encoding='latin-1', index=0)
+    print(contador, "/", len(carpetas))
+    contador += 1
+    l_df_presas.clear()
+    
+
+#%%
+archivo_presas
 
 #%%
 ############### Se consulta qué archivos hacen falta, dado que el webscraping de los niveles de presas arroja datos repetidos ##################
@@ -133,6 +178,7 @@ import os
 
 dir = 'C:\\Users\\regg6\\OneDrive - regulus.com.mx\\Documentos\\Archivos_regulus\\DATOS VARIOS\\Niveles de agua (Presas)\\'
 os.chdir(dir)
+
 ficheros = [x for x in os.listdir(os.getcwd()) if x.endswith('.csv')]
 l_fechas_archivos = []
 for f in ficheros:
@@ -223,7 +269,6 @@ dic_latitud = dict(zip(coordenadas_presas['Nombre de presa'], coordenadas_presas
 
 for archivo in l_archivos_presas:
     nombre_archivo = archivo[0:-4]
-    
     df_presa = pd.read_csv(archivo, encoding='latin-1')
     df_presa.columns = [x.rstrip().lstrip() for x in df_presa.columns]
     try:
@@ -254,3 +299,43 @@ pd.DataFrame({'Coordenadas Presas Pendientes':l_presas_coordenadas_pendientes}).
 
 
 #%%
+###################### Genera el catálogo de Presas #########################
+import pandas as pd
+import datetime
+from datetime import datetime
+import os
+
+#Cambia de directorio y genera una lista de los archivos CSV ubicados en esa carpeta:
+dir_presas = 'C:\\Users\\regg6\\OneDrive - regulus.com.mx\\Documentos\\Archivos_regulus\\DATOS VARIOS\\CLEAN DATA\\'
+os.chdir(dir_presas)
+l_archivos_presas = [x for x in os.listdir(os.getcwd()) if x.endswith('csv')]
+l_df_presas = []
+contador = 1
+
+#Utiliza solamente algunas columnas y genera una nueva "Porcentaje de llenado"
+for archivo in l_archivos_presas:
+    archivo_presas = pd.read_csv(archivo, sep=',', index_col=0, encoding='latin-1')
+    archivo_presas = archivo_presas.reset_index(drop=True)
+    archivo_presas.columns = [' '.join(columna.split()) for columna in archivo_presas.columns]
+    archivo_presas = archivo_presas[['Fecha', 'Nombre de presa', 'Entidad federativa', 'NAME Almacenamiento (hm³)', 'NAMO Almacenamiento (hm³)', 'Almacenamiento Actual (hm³)']]
+    
+    #Elimina espacios en blanco en cada renglón:
+    archivo_presas['Nombre de presa'] = archivo_presas['Nombre de presa'].apply(lambda x: ' '.join(x.split()))
+    archivo_presas['Entidad federativa'] = archivo_presas['Entidad federativa'].apply(lambda x: ' '.join(x.split()))
+
+    #Elimina duplicados agrega nueva columna, elimina acentos y homologa nombres de presa:
+    archivo_presas = archivo_presas.drop_duplicates().reset_index(drop=True)
+    archivo_presas['Porcentaje de llenado'] = round(archivo_presas['Almacenamiento Actual (hm³)'] / archivo_presas['NAMO Almacenamiento (hm³)'] *100, 2)
+    archivo_presas['Nombre de presa'] = archivo_presas['Nombre de presa'].replace({r'á':'a', r'é':'e', r'í':'i', r'ó':'o', r'ú':'u', r'Á':r'A', r'É':'E', r'Í':'I', r'Ó':'O', r'Ú':'U'}, regex=True)
+    archivo_presas['Nombre de presa'] = archivo_presas['Nombre de presa'].replace({r"\.,":","}, regex=True)
+    for i in range(len(archivo_presas)):
+        #print(archivo_presas.loc[i, "Nombre de presa"])
+        archivo_presas.loc[i, "Nombre de presa"] = archivo_presas.loc[i, "Nombre de presa"].split(',')[0]
+    l_df_presas.append(archivo_presas)
+    print(contador, "/", len(l_archivos_presas))
+    contador += 1
+
+df_presas = pd.concat(l_df_presas).drop_duplicates().reset_index(drop=True)
+
+#%%
+df_presas
